@@ -1,10 +1,21 @@
 import React from 'react';
 import { getTranslation as t } from '../i18n';
 
-export default function Demographics({ formData, onChange, onNext, lang }) {
+export default function Demographics({ formData, onChange, onNext, lang, onQuickFill }) {
   return (
     <div className="tab-pane fade-in">
-      <h2 style={{ color: 'var(--primary-cyan)', marginBottom: '1.5rem' }}>{t(lang, 'patientDemo')}</h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+        <h2 style={{ color: 'var(--primary-cyan)', margin: 0 }}>{t(lang, 'patientDemo')}</h2>
+        <button 
+          type="button" 
+          onClick={onQuickFill} 
+          className="btn btn-neon" 
+          style={{ fontSize: '0.75rem', padding: '0.4rem 0.8rem' }}
+        >
+          ⚡ Quick Fill
+        </button>
+      </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
         <div className="form-group">
           <label>{t(lang, 'patientName')}</label>

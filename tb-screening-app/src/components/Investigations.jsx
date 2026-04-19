@@ -43,12 +43,35 @@ export default function Investigations({ onPrev, onAssess, isAssessing, lang }) 
   };
 
   const [xrayFile, setXrayFile] = useState(null);
+  const [isXrayScanning, setIsXrayScanning] = useState(false);
+  const [xrayResult, setXrayResult] = useState(null);
 
-  const handleXrayUpload = (e) => {
+  const handleXrayUpload = async (e) => {
     const file = e.target.files[0];
     if (file) {
       setXrayFile(file);
       setXrayPreview(URL.createObjectURL(file));
+      setIsXrayScanning(true);
+      setXrayResult(null);
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const response = await fetch('/api/analyze-xray', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await response.json();
+        
+        if (data.success || data.status) {
+          setXrayResult(data);
+        }
+      } catch (error) {
+        console.error("X-ray AI Error:", error);
+      } finally {
+        setIsXrayScanning(false);
+      }
     }
   };
 
@@ -100,10 +123,53 @@ export default function Investigations({ onPrev, onAssess, isAssessing, lang }) 
           
           <input type="file" accept="image/*" onChange={handleXrayUpload} style={{ marginBottom: '1rem', width: '100%', color: 'var(--text-muted)' }} />
           
-          {xrayPreview && (
-            <div style={{ marginTop: '1rem', textAlign: 'center' }}>
-               <img src={xrayPreview} alt="Chest X-ray preview" style={{ maxWidth: '100%', maxHeight: '250px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.2)' }} />
+          {isXrayScanning && (
+            <div style={{ marginTop: '1.5rem', color: 'var(--neon-orange)', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 'bold' }}>
+              <div style={{ width: '20px', height: '20px', borderRadius: '50%', border: '2px solid rgba(245, 158, 11, 0.2)', borderTopColor: 'var(--neon-orange)', animation: 'spin 1s linear infinite' }}></div>
+              Analyzing X-ray...
             </div>
+          )}
+
+          {xrayResult && !isXrayScanning && (
+             <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', border: `1px solid ${xrayResult.status === 'Tuberculosis' ? 'rgba(239, 68, 68, 0.5)' : 'rgba(16, 185, 129, 0.5)'}` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem', alignItems: 'center' }}>
+                   <div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>AI Prediction</div>
+                      <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: xrayResult.status === 'Tuberculosis' ? 'var(--neon-red)' : 'var(--neon-green)' }}>
+                        {xrayResult.status}
+                      </div>
+                   </div>
+                   <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Confidence</div>
+                      <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'var(--text-main)' }}>
+                        {(xrayResult.confidence * 100).toFixed(1)}%
+                      </div>
+                   </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Original</div>
+                    <img src={xrayPreview} alt="Original" style={{ width: '100%', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.1)' }} />
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '4px' }}>Grad-CAM Heatmap</div>
+                    <div style={{ position: 'relative', width: '100%', borderRadius: '4px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
+                      <img src={xrayPreview} alt="Base" style={{ width: '100%', display: 'block' }} />
+                      <div style={{ 
+                          position: 'absolute', 
+                          top: 0, left: 0, right: 0, bottom: 0, 
+                          background: xrayResult.status === 'Tuberculosis' 
+                              ? 'radial-gradient(circle at 60% 40%, rgba(239, 68, 68, 0.6) 0%, rgba(245, 158, 11, 0.2) 40%, transparent 70%)'
+                              : 'linear-gradient(rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.1))',
+                          mixBlendMode: 'screen',
+                          pointerEvents: 'none'
+                      }}></div>
+                    </div>
+                  </div>
+                </div>
+
+             </div>
           )}
         </div>
       </div>

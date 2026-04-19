@@ -1,38 +1,91 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { getTranslation as t } from '../i18n';
+import ClinicalExplanationPanel from './ClinicalExplanationPanel';
 
-export default function RiskReport({ duration, symptoms, lang, patientData, aiResult }) {
+export default function RiskReport({ duration, symptoms, lang, patientData, aiResult, onSaveVisit }) {
+  const [notified, setNotified] = useState(false);
+
+  const handleNotify = () => {
+    setNotified(true);
+    setTimeout(() => setNotified(false), 5000);
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+
   const calculateRisk = () => {
-    // If AI Result exists, prioritize it
-    if (aiResult && aiResult.status) {
-      if (aiResult.status === 'Tuberculosis') {
-        return { level: 'HIGH', class: 'risk-very-high', note: aiResult.details };
-      } else {
-        return { level: 'LOW', class: 'risk-low', note: aiResult.details };
-      }
+
+    let score = 0;
+    let reasons = [];
+
+    if (symptoms.coughDuration > 14) { 
+        score += 25; 
+        reasons.push(t(lang, 'chronicCough') || 'Chronic cough'); 
+    }
+    if (symptoms.fever) { 
+        score += 10; 
+        reasons.push(t(lang, 'fever') || 'Fever'); 
+    }
+    if (symptoms.weightLoss) { 
+        score += 15; 
+        reasons.push(t(lang, 'weightLoss') || 'Weight loss'); 
+    }
+    if (symptoms.nightSweats) { 
+        score += 10; 
+        reasons.push(t(lang, 'nightSweats') || 'Night sweats'); 
+    }
+    if (symptoms.hemoptysis) { 
+        score += 25; 
+        reasons.push(t(lang, 'hemoptysis') || 'Hemoptysis (blood in sputum)'); 
+    }
+    if (symptoms.chestPain || symptoms.breathlessness) { 
+        score += 15; 
+        reasons.push(t(lang, 'chestPainBreathlessness') || 'Chest pain / Breathlessness'); 
+    }
+    if (symptoms.tbContact === 'Yes') { 
+        score += 20; 
+        reasons.push(t(lang, 'tbContactHistory') || 'TB contact history'); 
+    }
+    if (duration > 2) { 
+        score += 15; 
+        reasons.push(t(lang, 'multipleVisits') || 'Multiple clinic visits'); 
     }
 
-    const hasProlongedCough = symptoms.coughDuration > 14;
-    const hasMediumCough = symptoms.coughDuration >= 7 && symptoms.coughDuration <= 14;
-    const hasHemoptysis = symptoms.hemoptysis;
-    const isMultipleVisits = duration > 2;
-    const hasTbContact = symptoms.tbContact === 'Yes';
-    
-    let basicSymptomsCount = 0;
-    if (symptoms.coughDuration > 0) basicSymptomsCount++;
-    if (symptoms.fever) basicSymptomsCount++;
-    if (symptoms.weightLoss) basicSymptomsCount++;
-    if (symptoms.nightSweats) basicSymptomsCount++;
-    
-    if (hasProlongedCough || hasHemoptysis || isMultipleVisits || hasTbContact) {
-      return { level: 'HIGH', class: 'risk-very-high' };
+    if (aiResult && aiResult.status === 'Tuberculosis') {
+      score += 30;
+      reasons.push(t(lang, 'aiDetection') || 'AI detection');
     }
-    
-    if ((basicSymptomsCount >= 2 && basicSymptomsCount <= 3) || hasMediumCough) {
-      return { level: 'MODERATE', class: 'risk-high' };
+
+    score = Math.min(score, 100);
+
+    let level = '';
+    let colorVar = '';
+    let shadowColor = '';
+
+    if (score <= 30) { 
+        level = 'LOW'; 
+        colorVar = 'var(--neon-green)'; 
+        shadowColor = 'rgba(16, 185, 129, 0.5)';
+    } else if (score <= 60) { 
+        level = 'MODERATE'; 
+        colorVar = 'var(--neon-orange)'; 
+        shadowColor = 'rgba(245, 158, 11, 0.5)';
+    } else { 
+        level = 'HIGH'; 
+        colorVar = 'var(--neon-red)'; 
+        shadowColor = 'rgba(239, 68, 68, 0.5)';
     }
-    
-    return { level: 'LOW', class: 'risk-low' };
+
+    return { 
+        score, 
+        level, 
+        colorVar, 
+        shadowColor, 
+        reasons, 
+        note: aiResult ? aiResult.details : null 
+    };
   };
 
   const risk = calculateRisk();
@@ -58,11 +111,6 @@ export default function RiskReport({ duration, symptoms, lang, patientData, aiRe
   };
 
   const downloadReport = () => {
-    const activeSymptomsList = Object.entries(symptoms)
-      .filter(([k, v]) => v === true)
-      .map(([k]) => t('en', k))
-      .join(', ');
-
     const reportText = `
 ------------------------------------------------
 TB CLINICAL RISK REPORT (AI ASSISTED)
@@ -77,12 +125,15 @@ TB Contact History: ${patientData.tbContact}
 
 Number of visits: ${duration}
 Cough Duration: ${symptoms.coughDuration} days
-Active Symptoms: ${activeSymptomsList || 'None'}
 
 ------------------------------------------------
 RISK ASSESSMENT OUTCOME
 ------------------------------------------------
-Risk Level: ${risk.level} RISK
+Score: ${risk.score}/100
+Risk Category: ${risk.level} RISK
+
+Reasons for Risk Score:
+${risk.reasons.length > 0 ? risk.reasons.map(r => '- ' + r).join('\n') : 'No significant risk factors logged.'}
 
 AI Actionable Insight: 
 ${getAiActionableInsights()}
@@ -107,17 +158,40 @@ Disclaimer: This report was generated by an AI-assisted screening tool and is no
     <div style={{ padding: '2rem', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(15, 23, 42, 0.4)', position: 'relative', overflow: 'hidden' }}>
       <div style={{ position: 'absolute', top: 0, right: 0, padding: '1rem', fontSize: '0.8rem', opacity: 0.5 }}>AI RISK ENGINE v4.2</div>
       
-      <h3 style={{ color: 'var(--primary-cyan)', marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '1px' }}>{t(lang, 'riskLevel')}</h3>
-      <div style={{ fontSize: '3rem', fontWeight: '900', color: risk.level === 'HIGH' ? 'var(--neon-red)' : (risk.level === 'MODERATE' ? 'var(--neon-orange)' : 'var(--neon-green)'), textShadow: `0 0 20px ${risk.level === 'HIGH' ? 'rgba(239, 68, 68, 0.5)' : (risk.level === 'MODERATE' ? 'rgba(245, 158, 11, 0.5)' : 'rgba(16, 185, 129, 0.5)')}` }}>
-        {risk.level} RISK
+      <h3 style={{ color: 'var(--primary-cyan)', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '1px' }}>{t(lang, 'riskLevel')}</h3>
+      
+      <div style={{ 
+          fontSize: '2.5rem', 
+          fontWeight: '900', 
+          color: risk.colorVar, 
+          textShadow: `0 0 20px ${risk.shadowColor}`,
+          marginBottom: '0.5rem'
+      }}>
+        {risk.level === 'HIGH' ? t(lang, 'highRisk') || 'High Risk' : (risk.level === 'MODERATE' ? t(lang, 'moderateRisk') || 'Moderate Risk' : t(lang, 'lowRisk') || 'Low Risk')} 
+        <span style={{ fontSize: '1.5rem', marginLeft: '10px', opacity: 0.9 }}>(Score: {risk.score})</span>
       </div>
       
-      <div style={{ marginTop: '2rem', background: 'rgba(255, 255, 255, 0.03)', padding: '1.5rem', borderRadius: '12px', borderLeft: `4px solid ${risk.level === 'HIGH' ? 'var(--neon-red)' : (risk.level === 'MODERATE' ? 'var(--neon-orange)' : 'var(--neon-green)')}` }}>
+      {risk.reasons.length > 0 && (
+          <div style={{ color: 'var(--text-muted)', fontSize: '1rem', marginTop: '1rem', marginBottom: '1rem' }}>
+              <span style={{ color: 'var(--text-main)', fontWeight: 'bold' }}>Reasons: </span>
+              {risk.reasons.join(', ')}
+          </div>
+      )}
+
+      <div style={{ marginTop: '2rem', background: 'rgba(255, 255, 255, 0.03)', padding: '1.5rem', borderRadius: '12px', borderLeft: `4px solid ${risk.colorVar}` }}>
         <p style={{ fontSize: '1rem', color: 'var(--text-main)', lineHeight: '1.5' }}>
           {risk.note ? <strong>{risk.note}. </strong> : ''}
           {getAiActionableInsights()}
         </p>
       </div>
+
+      <ClinicalExplanationPanel 
+        risk={risk} 
+        symptoms={symptoms} 
+        lang={lang} 
+        aiResult={aiResult} 
+      />
+
 
       <div style={{ marginTop: '1.5rem', background: 'rgba(255, 255, 255, 0.02)', padding: '1.5rem', borderRadius: '12px' }}>
         <h4 style={{ marginBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.5rem', color: 'var(--text-muted)' }}>
@@ -133,11 +207,91 @@ Disclaimer: This report was generated by an AI-assisted screening tool and is no
         </ul>
       </div>
 
-      <div style={{ marginTop: '2.5rem', textAlign: 'center' }}>
-        <button onClick={downloadReport} className="btn btn-neon" style={{ fontWeight: 'bold' }}>
-          ↓ {t(lang, 'downloadReport')}
-        </button>
+      <div style={{ marginTop: '2.5rem', display: 'flex', gap: '1rem', justifyContent: 'center', alignItems: 'center', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+          <button onClick={downloadReport} className="btn btn-secondary" style={{ fontWeight: 'bold' }}>
+            ↓ TXT Report
+          </button>
+
+          <button onClick={handlePrint} className="btn btn-neon" style={{ fontWeight: 'bold' }}>
+            📄 Print / PDF Report
+          </button>
+          
+          <button 
+            onClick={() => onSaveVisit(risk.score)} 
+            className="btn btn-secondary" 
+            style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem', borderColor: 'var(--primary-cyan)', color: 'var(--primary-cyan)' }}
+          >
+            <span style={{ fontSize: '1.2rem' }}>💾</span> Save to Timeline
+          </button>
+
+          <button 
+            onClick={handleNotify} 
+            className="btn btn-primary" 
+            style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+            disabled={notified}
+          >
+            <span style={{ fontSize: '1.2rem' }}>📱</span> Notify Patient
+          </button>
+
+        </div>
+
+        {notified && (
+          <div className="fade-in" style={{ 
+              background: 'rgba(16, 185, 129, 0.1)', 
+              color: 'var(--neon-green)', 
+              padding: '0.75rem 1.5rem', 
+              borderRadius: '8px', 
+              border: '1px solid var(--neon-green)',
+              fontSize: '0.9rem',
+              fontWeight: 'bold',
+              marginTop: '0.5rem',
+              animation: 'pulseGreen 2s infinite'
+          }}>
+            ✅ Message sent successfully: "High TB risk detected. Please visit nearest clinic."
+          </div>
+        )}
       </div>
+
+      {/* HIDDEN PRINTABLE SECTION */}
+      <div className="printable-report" style={{ display: 'none' }}>
+          <div style={{ textAlign: 'center', borderBottom: '2px solid #333', paddingBottom: '1rem', marginBottom: '2rem' }}>
+              <h1 style={{ margin: 0, color: '#000' }}>Swasth Saans</h1>
+              <p style={{ margin: 0, fontStyle: 'italic', color: '#666' }}>Jaldi Pehchaan, Behtar Ilaaj</p>
+              <p style={{ margin: '0.5rem 0 0', fontWeight: 'bold' }}>TB CLINICAL SCREENING REPORT</p>
+          </div>
+
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '2rem' }}>
+            <tbody>
+              <tr><td style={{ padding: '8px', border: '1px solid #ddd', fontWeight: 'bold' }}>Patient Name</td><td style={{ padding: '8px', border: '1px solid #ddd' }}>{patientData.patientName}</td></tr>
+              <tr><td style={{ padding: '8px', border: '1px solid #ddd', fontWeight: 'bold' }}>Age/Gender</td><td style={{ padding: '8px', border: '1px solid #ddd' }}>{patientData.age} / {patientData.gender}</td></tr>
+              <tr><td style={{ padding: '8px', border: '1px solid #ddd', fontWeight: 'bold' }}>Location</td><td style={{ padding: '8px', border: '1px solid #ddd' }}>{patientData.location || 'N/A'}</td></tr>
+              <tr><td style={{ padding: '8px', border: '1px solid #ddd', fontWeight: 'bold' }}>Date Generated</td><td style={{ padding: '8px', border: '1px solid #ddd' }}>{new Date().toLocaleDateString()}</td></tr>
+            </tbody>
+          </table>
+
+          <div style={{ marginBottom: '2rem' }}>
+              <h3 style={{ borderBottom: '1px solid #eee', paddingBottom: '0.5rem' }}>Risk Assessment Summary</h3>
+              <p style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>Score: {risk.score}/100 - <span style={{ color: risk.level === 'HIGH' ? 'red' : 'orange' }}>{risk.level} RISK</span></p>
+              <p><strong>Clinical Reasons:</strong> {risk.reasons.join(', ')}</p>
+          </div>
+
+          <div style={{ marginBottom: '2rem' }}>
+              <h3 style={{ borderBottom: '1px solid #eee', paddingBottom: '0.5rem' }}>AI Insights & Recommendations</h3>
+              <p><strong>Status:</strong> {aiResult ? aiResult.status : 'N/A'}</p>
+              <p><strong>Next Steps:</strong></p>
+              <ul>
+                {getRecommendationsArray().map((r, i) => <li key={i}>{r}</li>)}
+              </ul>
+          </div>
+
+          <div style={{ marginTop: '4rem', fontSize: '0.8rem', color: '#999', borderTop: '1px solid #eee', paddingTop: '1rem', textAlign: 'center' }}>
+            This is an AI-generated screening report. Please consult a qualified medical professional for diagnosis.
+          </div>
+      </div>
+
+
     </div>
   );
 }
+

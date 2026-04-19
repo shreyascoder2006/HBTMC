@@ -4,7 +4,7 @@ import { getFaqMatch } from '../faqDatabase';
 const LANG_LABELS = { en: 'ENG', hi: 'HIN', mr: 'MAR' };
 const LANG_CODES  = { en: 'en-US', hi: 'hi-IN', mr: 'mr-IN' };
 
-export default function Chatbot({ lang }) {
+export default function Chatbot({ lang, onDataExtracted }) {
   const [isOpen,      setIsOpen]      = useState(false);
   const [activeLang,  setActiveLang]  = useState(lang || 'en');
   const [messages,    setMessages]    = useState([{
@@ -32,6 +32,37 @@ export default function Chatbot({ lang }) {
     if (isOpen) messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isOpen]);
 
+  const extractClinicalData = useCallback((text) => {
+    const lower = text.toLowerCase();
+    const result = { symptoms: {}, duration: null };
+
+    // Symptom Keywords (Multilingual)
+    const keywords = {
+      cough: ['cough', 'khansi', 'khokala', 'khasi'],
+      fever: ['fever', 'bukhaar', 'tap', 'buhar'],
+      weightLoss: ['weight loss', 'vajan kam', 'weight kam'],
+      hemoptysis: ['blood', 'khoon', 'rakt', 'spitum'],
+      chestPain: ['chest pain', 'seene mein dard', 'chati', 'chest'],
+    };
+
+    Object.keys(keywords).forEach(key => {
+      if (keywords[key].some(k => lower.includes(k))) {
+        result.symptoms[key] = true;
+      }
+    });
+
+    // Duration Extraction (e.g., "15 days", "2 weeks")
+    const dayMatch = lower.match(/(\d+)\s*(day|days|din|divas)/);
+    const weekMatch = lower.match(/(\d+)\s*(week|weeks|hafte|hapte)/);
+
+    if (dayMatch) result.duration = parseInt(dayMatch[1]);
+    else if (weekMatch) result.duration = parseInt(weekMatch[1]) * 7;
+
+    if (Object.keys(result.symptoms).length > 0 || result.duration) {
+      if (onDataExtracted) onDataExtracted(result);
+    }
+  }, [onDataExtracted]);
+
   const speak = useCallback((text, rLang) => {
     if (!window.speechSynthesis) return;
     window.speechSynthesis.cancel();
@@ -44,7 +75,13 @@ export default function Chatbot({ lang }) {
   const handleQuery = useCallback((text) => {
     const trimmed = text.trim();
     if (!trimmed) return;
+    
+    // Trigger Extraction
+    extractClinicalData(trimmed);
+
     setMessages(prev => [...prev, { role: 'user', content: trimmed }]);
+
+
     setInputText('');
     setIsLoading(true);
     setStatusTxt('');
